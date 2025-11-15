@@ -45,7 +45,9 @@ export OPENAI_API_KEY='your-api-key-here'
 
 3. Run the application:
 bash
-streamlit run app.py
+streamlit run CODE.py
+
+CODE file is provided in the same repository
 
 
 ## Requirements
