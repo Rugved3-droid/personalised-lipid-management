@@ -1,0 +1,765 @@
+# voice_lipids_ultimate.py - Complete Voice-Driven System with All Trial Criteria
+import streamlit as st
+from openai import OpenAI
+from datetime import datetime
+import json
+from typing import Dict, List, Optional, Tuple
+import tempfile
+import os
+import base64
+
+# Initialize OpenAI
+OPENAI_API_KEY = "insert_Open_AI_KEY_here"
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+# ============= COMPLETE TRIAL CRITERIA DATABASE =============
+# This contains EVERY inclusion/exclusion criterion from your provided trials
+
+COMPLETE_TRIAL_CRITERIA = """
+TRIAL 1: 4S (Scandinavian Simvastatin Survival Study) - 1994 - Simvastatin 20-40mg
+INCLUSION:
+- Age: 35-70 years
+- Sex: Male or female  
+- History of angina pectoris OR prior myocardial infarction
+- If prior MI: must be >6 months before enrollment
+- Total cholesterol: 213-309 mg/dL
+- LDL cholesterol: 135-260 mg/dL
+- Triglycerides: ≤220 mg/dL
+- Must have completed 8-week dietary trial
+- Stable clinical condition
+EXCLUSION:
+- Planned CABG or PCI within 6 months
+- MI within 6 months of enrollment
+- Heart failure NYHA class III or IV
+- Life-threatening arrhythmias
+- Unstable angina
+- Secondary hypercholesterolemia
+- ALT or AST >2x upper limit of normal
+- Active liver disease
+- Creatinine >2.0 mg/dL
+- Insulin-dependent diabetes mellitus
+- Premenopausal women not on contraception
+- Pregnancy or breastfeeding
+- Drug or alcohol abuse
+- Poor expected compliance
+- Life expectancy <5 years
+- Concurrent use of lipid-lowering drugs
+
+TRIAL 2: PROVE-IT TIMI 22 - 2004 - Atorvastatin 80mg vs Pravastatin 40mg
+INCLUSION:
+- Age: ≥18 years
+- Hospitalized for acute coronary syndrome within 10 days
+- ACS types: STEMI, NSTEMI, or unstable angina with objective evidence
+- Total cholesterol: ≤240 mg/dL
+- If on lipid therapy: LDL ≤125 mg/dL
+- Clinically stable after index ACS event
+EXCLUSION:
+- CABG planned for index event
+- PCI planned except for index ACS
+- Left main disease requiring revascularization
+- Cardiogenic shock
+- ALT or AST >3x upper limit of normal
+- Creatinine >2.0 mg/dL
+- Creatine kinase >3x ULN (unexplained)
+- Currently on statin 80mg
+- Use of fibrates or niacin >200mg/day
+- Use of cyclosporine or strong CYP3A4 inhibitors
+- Previous intolerance to statins
+- Active liver disease
+- Pregnant or breastfeeding
+- Uncontrolled diabetes (HbA1c >10%)
+- Uncontrolled hypertension
+- Cancer with life expectancy <2 years
+
+TRIAL 3: JUPITER - 2008 - Rosuvastatin 20mg (Primary Prevention)
+INCLUSION:
+- Age: Men ≥50 years, Women ≥60 years
+- No history of cardiovascular disease (primary prevention only)
+- LDL cholesterol: <130 mg/dL
+- High-sensitivity CRP: ≥2.0 mg/L (must have 2 measurements)
+- Triglycerides: ≤500 mg/dL
+- Not currently on lipid-lowering therapy
+- Willing to take study medication
+EXCLUSION:
+- Previous cardiovascular disease (MI, stroke, revascularization, PAD)
+- Previous hospitalization for unstable angina
+- Diabetes mellitus (type 1 or type 2)
+- Current use of lipid-lowering therapy
+- Current hormone replacement therapy
+- ALT or AST >2x upper limit of normal
+- Creatinine >2.0 mg/dL
+- Creatine kinase >3x ULN
+- Uncontrolled hypertension (SBP >190 or DBP >100)
+- Uncontrolled hypothyroidism (TSH >1.5x ULN)
+- Cancer within 5 years (except non-melanoma skin cancer)
+- History of alcohol or drug abuse
+- Inflammatory conditions (rheumatoid arthritis, lupus, IBD)
+- Chronic NSAID or corticosteroid use
+- Previous statin intolerance
+- Pregnancy, breastfeeding, or planning pregnancy
+- Severe obesity (BMI >45)
+- History of hemorrhagic stroke
+- Organ transplant recipient
+
+TRIAL 4: IMPROVE-IT - 2015 - Simvastatin 40mg + Ezetimibe 10mg
+INCLUSION:
+- Age: ≥50 years
+- Hospitalized for acute coronary syndrome within 10 days
+- ACS types: STEMI, NSTEMI, or high-risk unstable angina
+- LDL cholesterol: 50-125 mg/dL if on lipid therapy
+- LDL cholesterol: 50-100 mg/dL if therapy changed ≤1 month
+- If not on lipid therapy: LDL 50-125 mg/dL
+- Stabilized after index event
+EXCLUSION:
+- CABG performed for index ACS
+- Planned CABG
+- ALT or AST >3x upper limit of normal
+- Creatinine clearance <30 mL/min
+- Active liver disease
+- Creatine kinase >5x ULN
+- Uncontrolled endocrine disorders
+- Heart failure NYHA class III or IV with expected survival <3 years
+- Concurrent fibrate use
+- Need for niacin >400mg/day
+- Previous intolerance to simvastatin or ezetimibe
+- Pregnant or breastfeeding
+- Women of childbearing potential not on effective contraception
+- Use of potent CYP3A4 inhibitors
+- Other serious medical conditions with life expectancy <3 years
+
+TRIAL 5: FOURIER - 2017 - Evolocumab (PCSK9 inhibitor)
+INCLUSION:
+- Age: 40-85 years
+- Clinically evident atherosclerotic cardiovascular disease:
+  • Prior MI (>4 weeks ago) OR
+  • Prior non-hemorrhagic stroke (>4 weeks ago) OR
+  • Symptomatic PAD (claudication with ABI <0.85 or previous revascularization)
+- If single vascular bed disease, need ONE additional risk factor:
+  • Age ≥65 years
+  • Diabetes mellitus
+  • Current daily cigarette smoking
+  • History of additional MI or stroke
+  • Symptomatic PAD
+- LDL cholesterol: ≥70 mg/dL OR non-HDL cholesterol ≥100 mg/dL
+- On optimized statin therapy (high or moderate intensity) for ≥4 weeks OR documented statin intolerance
+- Fasting triglycerides: ≤400 mg/dL
+- Stable medical condition
+EXCLUSION:
+- MI or stroke within 4 weeks of randomization
+- Planned coronary revascularization within 3 months
+- NYHA class III or IV heart failure
+- Left ventricular ejection fraction <30%
+- Uncontrolled cardiac arrhythmias
+- Uncontrolled hypertension (SBP >180 or DBP >110)
+- eGFR <20 mL/min/1.73m²
+- Active liver disease
+- ALT or AST >3x ULN
+- Hemorrhagic stroke (ever)
+- Uncontrolled or untreated thyroid disease
+- Previous treatment with evolocumab or other PCSK9 inhibitor
+- Known sensitivity to PCSK9 inhibitors
+- Pregnant, breastfeeding, or planning pregnancy
+- Use of mipomersen or lomitapide within 12 months
+- Diagnosis of homozygous familial hypercholesterolemia
+- Active malignancy
+
+TRIAL 6: ODYSSEY OUTCOMES - 2018 - Alirocumab (PCSK9 inhibitor)
+INCLUSION:
+- Age: ≥40 years
+- Hospitalized for acute coronary syndrome 1-12 months before randomization
+- ACS types: STEMI, NSTEMI, or unstable angina
+- On high-intensity statin (atorvastatin 40-80mg or rosuvastatin 20-40mg) OR maximum tolerated statin
+- Must have at least ONE despite statin:
+  • LDL cholesterol ≥70 mg/dL OR
+  • Non-HDL cholesterol ≥100 mg/dL OR
+  • Apolipoprotein B ≥80 mg/dL
+- Stable medical therapy for ≥2 weeks
+EXCLUSION:
+- Uncontrolled hypertension (SBP >180 or DBP >110)
+- NYHA class III or IV heart failure
+- LVEF <25%
+- Fasting triglycerides >400 mg/dL
+- ALT or AST >3x ULN
+- eGFR <30 mL/min/1.73m²
+- History of hemorrhagic stroke
+- Previous use of PCSK9 inhibitors
+- Known sensitivity to alirocumab or excipients
+- Conditions that could interfere with treatment compliance
+- Pregnant, breastfeeding, or planning pregnancy
+- Use of systemic corticosteroids (unless stable dose for chronic condition)
+- Active malignancy (except non-melanoma skin cancer)
+- Concomitant use of mipomersen or lomitapide
+
+TRIAL 7: ORION-10 - 2020 - Inclisiran (siRNA targeting PCSK9)
+INCLUSION:
+- Age: ≥18 years
+- Clinical atherosclerotic cardiovascular disease:
+  • Coronary artery disease (prior MI, PCI, or CABG) OR
+  • Cerebrovascular disease (prior ischemic stroke or carotid revascularization) OR
+  • Peripheral arterial disease (prior limb revascularization or amputation)
+- LDL cholesterol: ≥70 mg/dL
+- On maximally tolerated statin therapy (can be no statin if truly intolerant)
+- Stable lipid-lowering therapy for ≥30 days
+- Fasting triglycerides: ≤400 mg/dL
+EXCLUSION:
+- Acute coronary syndrome within 90 days of screening
+- PCI within 90 days or planned PCI
+- CABG within 90 days
+- NYHA class IV heart failure
+- Uncontrolled serious arrhythmia
+- Active liver disease or hepatic dysfunction
+- ALT or AST >3x ULN
+- eGFR <30 mL/min/1.73m²
+- Previous treatment with inclisiran
+- Previous adverse reaction to monoclonal antibody targeting PCSK9
+- Use of mipomersen or lomitapide within 12 months
+- Known homozygous familial hypercholesterolemia
+- Malignancy within 5 years (except adequately treated basal cell carcinoma)
+- Pregnant, breastfeeding, or planning pregnancy
+- Systemic corticosteroids use (unless stable chronic dose)
+- Participation in other investigational drug study within 30 days
+
+TRIAL 8: CLEAR Outcomes - 2023 - Bempedoic acid 180mg
+INCLUSION:
+- Age: ≥18 years
+- Statin intolerance: Unable to tolerate ≥2 different statins due to muscle symptoms
+- At least one statin tried at lowest approved dose
+- Symptoms resolved or improved upon statin discontinuation
+- High cardiovascular risk:
+  • Established cardiovascular disease (prior MI, stroke, coronary revascularization, PAD) OR
+  • High risk for primary prevention (age ≥55 men, ≥65 women with diabetes and one additional risk factor)
+- LDL cholesterol: ≥100 mg/dL
+- Fasting triglycerides: ≤500 mg/dL
+- Can be on low-intensity statin if tolerating
+- Can be on ezetimibe
+- Stable lipid-lowering regimen for ≥4 weeks
+EXCLUSION:
+- Acute coronary syndrome or stroke within 3 months
+- Planned coronary or carotid revascularization
+- Heart failure NYHA class IV
+- Uncontrolled cardiac arrhythmias
+- Severe uncontrolled hypertension
+- ALT or AST >3x ULN
+- eGFR <30 mL/min/1.73m²
+- Creatine kinase >5x ULN
+- History of gout with recurrent flares
+- Known cholelithiasis with complications
+- Uncontrolled diabetes (HbA1c >10%)
+- Active hepatic disease
+- Pregnancy, breastfeeding, or planning pregnancy
+- Previous treatment with bempedoic acid
+- Use of simvastatin >40mg daily (interaction risk)
+- Participation in another investigational drug trial
+- Any condition that would limit expected survival <3 years
+
+TRIAL 9: REDUCE-IT - 2019 - Icosapent ethyl 4g/day (Purified EPA)
+INCLUSION:
+- Age: ≥45 years with established cardiovascular disease OR ≥50 years with diabetes plus ≥1 additional risk factor
+- Established CVD: Coronary artery disease, cerebrovascular disease, or peripheral arterial disease
+- Additional risk factors for diabetic patients:
+  • Age ≥55 for men or ≥60 for women
+  • Current cigarette smoking
+  • Hypertension
+  • HDL cholesterol <40 mg/dL for men or <50 mg/dL for women
+  • High-sensitivity CRP >3 mg/L
+  • Microalbuminuria or macroalbuminuria
+  • Diabetic retinopathy
+- Fasting triglycerides: 150-499 mg/dL
+- LDL cholesterol: 41-100 mg/dL
+- On stable statin therapy for ≥4 weeks (any dose, any statin)
+- Stable medical condition
+EXCLUSION:
+- Severe heart failure (NYHA class IV)
+- Planned coronary intervention (within 6 months)
+- Recent cardiovascular event within 30 days (MI, stroke, coronary revascularization)
+- Uncontrolled hypertension (SBP >200 or DBP >100)
+- ALT or AST >3x ULN
+- Active liver disease
+- eGFR <30 mL/min/1.73m²
+- Hemoglobin A1c >10%
+- Known hypersensitivity to fish or shellfish
+- Currently taking omega-3 fatty acid medications or supplements >1g/day
+- Use of fibrates within 6 weeks (except fenofibrate)
+- Use of niacin >200mg/day
+- Systemic corticosteroid use
+- Weight loss surgery within 6 months or planned
+- Pregnancy, breastfeeding, or planning pregnancy
+- Participation in other investigational drug trial
+- Any condition with life expectancy <5 years
+- History of pancreatitis
+"""
+
+INTERNATIONAL_GUIDELINES = """
+GUIDELINE COMPARISON:
+
+1. ACC/AHA 2018 (USA):
+- Very high risk: LDL <70 mg/dL (consider <55)
+- High risk: LDL <70 mg/dL and ≥50% reduction
+- Moderate risk: 30-49% LDL reduction
+- Uses ASCVD risk calculator
+- Emphasizes high-intensity statins
+- CAC scoring for intermediate risk
+- Cost considerations less emphasized
+
+2. ESC/EAS 2019 (Europe):
+- Very high risk: LDL <55 mg/dL and ≥50% reduction
+- High risk: LDL <70 mg/dL and ≥50% reduction  
+- Moderate risk: LDL <100 mg/dL
+- Low risk: LDL <116 mg/dL
+- More aggressive targets than US
+- Uses SCORE2 risk calculator
+- Apolipoprotein B targets included
+
+3. NICE 2023 (UK):
+- Focus on cost-effectiveness
+- 40% non-HDL cholesterol reduction for secondary prevention
+- Uses QRISK3 calculator
+- Atorvastatin 20mg for primary prevention
+- Atorvastatin 80mg for secondary prevention
+- Annual medication reviews
+
+4. CCS 2021 (Canada):
+- High risk: LDL <70 mg/dL or 50% reduction
+- Apolipoprotein B <80 mg/dL
+- Uses Framingham risk score
+- Statin indicated if 20% 10-year risk
+- Lipoprotein(a) screening recommended
+
+5. JAS 2022 (Japan):
+- High risk: LDL <100 mg/dL
+- Primary prevention: LDL <140 mg/dL
+- Lower statin doses typical
+- Uses J-PREDICT calculator
+- Emphasis on lifestyle modification
+"""
+
+# ============= VOICE-DRIVEN CLINICAL ENGINE =============
+
+class VoiceDrivenClinicalEngine:
+    def __init__(self):
+        self.ai_client = client
+        self.trial_criteria = COMPLETE_TRIAL_CRITERIA
+        self.guidelines = INTERNATIONAL_GUIDELINES
+        
+    def process_voice_to_recommendations(self, audio_file) -> Dict:
+        """Complete pipeline from voice to recommendations"""
+        
+        # Step 1: Transcribe audio
+        transcript = self.transcribe_audio(audio_file)
+        
+        # Step 2: Extract patient data and match trials
+        analysis = self.analyze_patient_and_match_trials(transcript)
+        
+        # Step 3: Compare guidelines and make recommendations
+        recommendations = self.generate_comprehensive_recommendations(analysis)
+        
+        return {
+            "transcript": transcript,
+            "analysis": analysis,
+            "recommendations": recommendations
+        }
+    
+    def transcribe_audio(self, audio_file) -> str:
+        """Transcribe audio using Whisper"""
+        try:
+            transcript = self.ai_client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                language="en"
+            )
+            return transcript.text
+        except Exception as e:
+            return f"Transcription error: {str(e)}"
+    
+    def analyze_patient_and_match_trials(self, transcript: str) -> Dict:
+        """Extract patient data and match against ALL trials"""
+        
+        prompt = f"""
+        You are a clinical trial matching expert. Analyze this patient presentation and match against ALL lipid trials.
+        
+        PATIENT PRESENTATION:
+        {transcript}
+        
+        COMPLETE TRIAL CRITERIA:
+        {self.trial_criteria}
+        
+        For EACH trial, determine:
+        1. Which inclusion criteria are MET (be specific)
+        2. Which inclusion criteria are NOT MET (be specific)
+        3. Which exclusion criteria are TRIGGERED (if any)
+        4. Overall eligibility (ELIGIBLE, EXCLUDED, or PARTIAL MATCH)
+        5. Match percentage based on inclusion criteria
+        
+        Also extract:
+        - Patient demographics (age, sex)
+        - All lab values mentioned
+        - All medical conditions
+        - Current medications
+        - Risk factors
+        
+        IMPORTANT:
+        - Check EVERY inclusion and exclusion criterion
+        - Note missing information that would be needed
+        - Calculate accurate match percentages
+        - Identify the BEST matching trials
+        
+        Return a structured analysis with:
+        1. Patient summary
+        2. Trial matching results for ALL 9 trials
+        3. Top 3 recommended trials with reasoning
+        4. Missing information that would improve matching
+        """
+        
+        try:
+            response = self.ai_client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "You are a clinical trial matching expert. Be thorough and precise."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=3000
+            )
+            
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            return f"Analysis error: {str(e)}"
+    
+    def generate_comprehensive_recommendations(self, analysis: str) -> Dict:
+        """Generate guideline comparisons and final recommendations"""
+        
+        prompt = f"""
+        Based on this patient analysis and trial matching results, provide comprehensive recommendations.
+        
+        PATIENT ANALYSIS:
+        {analysis}
+        
+        INTERNATIONAL GUIDELINES:
+        {self.guidelines}
+        
+        Please provide:
+        
+        1. GUIDELINE COMPARISON:
+        - What would ACC/AHA 2018 recommend for this patient?
+        - What would ESC/EAS 2019 recommend?
+        - What would NICE 2023 recommend?
+        - Which guideline is BEST for this specific patient and WHY?
+        - Would this patient benefit from following a different country's guideline? Explain.
+        
+        2. RISK STRATIFICATION:
+        - Calculate risk category (Very High/High/Moderate/Low)
+        - Explain the reasoning
+        - Note key risk factors
+        
+        3. LDL TARGET:
+        - Specific target based on best guideline
+        - Current gap to goal
+        - Expected timeline to achieve
+        
+        4. TREATMENT RECOMMENDATIONS:
+        - PRIMARY: Specific drug and dose
+        - If already on therapy: What to add or change
+        - Alternative if intolerant
+        - Non-pharmacologic interventions
+        
+        5. TRIAL EVIDENCE:
+        - Which trial evidence supports your recommendation?
+        - Expected outcomes based on trial data
+        - NNT (number needed to treat) if applicable
+        
+        6. MONITORING PLAN:
+        - When to recheck labs
+        - What to monitor for safety
+        - When to consider escalation
+        
+        7. KEY CLINICAL PEARLS:
+        - Important considerations for this specific patient
+        - Potential drug interactions
+        - Special populations considerations
+        
+        BE SPECIFIC: Include exact drug names, doses, targets, and timelines.
+        EXPLAIN YOUR REASONING: Why is your recommendation best for THIS patient?
+        """
+        
+        try:
+            response = self.ai_client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "You are a lipid specialist providing evidence-based recommendations. Be specific and explain your reasoning."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+                max_tokens=2500
+            )
+            
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            return f"Recommendation error: {str(e)}"
+
+# ============= STREAMLIT UI =============
+
+st.set_page_config(
+    page_title="Voice-Driven Lipids Clinical Decision System",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# Custom CSS
+st.markdown("""
+<style>
+    .main-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 15px;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .main-header h1 {
+        margin: 0;
+        font-size: 2.5rem;
+    }
+    .main-header p {
+        margin: 0.5rem 0 0 0;
+        font-size: 1.1rem;
+        opacity: 0.9;
+    }
+    .recording-box {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 15px;
+        text-align: center;
+        margin: 2rem 0;
+    }
+    .results-section {
+        background: #f8f9fa;
+        padding: 2rem;
+        border-radius: 10px;
+        margin: 1rem 0;
+    }
+    .trial-match {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin: 1rem 0;
+        border-left: 5px solid #4CAF50;
+    }
+    .trial-excluded {
+        border-left-color: #f44336;
+    }
+    .trial-partial {
+        border-left-color: #ff9800;
+    }
+    .guideline-box {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin: 1rem 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .recommendation-primary {
+        background: #e3f2fd;
+        border-left: 5px solid #2196F3;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin: 1rem 0;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Initialize session state
+if 'engine' not in st.session_state:
+    st.session_state.engine = VoiceDrivenClinicalEngine()
+if 'results' not in st.session_state:
+    st.session_state.results = None
+
+# Header
+st.markdown("""
+<div class="main-header">
+    <h1>🎙️ Voice-Driven Lipids Clinical Decision System</h1>
+    <p>Speak naturally about your patient - AI handles everything else</p>
+</div>
+""", unsafe_allow_html=True)
+
+# Main interface
+col1, col2 = st.columns([1, 2])
+
+with col1:
+    st.markdown("""
+    ### 📋 How to Use:
+    
+    1. **Click the microphone** below
+    2. **Describe your patient** naturally
+    3. **Include:**
+       - Age and sex
+       - CV history (MI, stroke, etc.)
+       - Lab values (LDL, HDL, TG, etc.)
+       - Current medications
+       - Risk factors (diabetes, smoking)
+       - Any intolerances
+    4. **Click Process** to get instant analysis
+    
+    ### 🎯 What You'll Get:
+    - Trial matching (all 9 major trials)
+    - Guideline comparison (US, EU, UK, etc.)
+    - Specific recommendations
+    - Evidence-based reasoning
+    - Monitoring plan
+    """)
+    
+    # Example button
+    if st.button("🎤 Show Example Presentation"):
+        st.info("""
+        **Example presentation:**
+        
+        "This is a 65-year-old male who had an MI 3 months ago. 
+        He's currently on atorvastatin 40mg daily. His most recent 
+        labs show LDL of 155, HDL 38, triglycerides 280. He has 
+        type 2 diabetes with an HbA1c of 8.2%. His eGFR is 55. 
+        He's also on metformin, lisinopril, and metoprolol. 
+        Blood pressure is well controlled. He quit smoking after 
+        his MI. No known allergies or intolerances."
+        """)
+
+with col2:
+    st.markdown("""
+    <div class="recording-box">
+        <h2>🎤 Record Patient Presentation</h2>
+        <p>Click below to start recording</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Audio input
+    audio_bytes = st.audio_input("Click to start recording your patient presentation")
+    
+    if audio_bytes:
+        st.audio(audio_bytes, format="audio/wav")
+        
+        if st.button("🚀 Process Patient Presentation", type="primary", use_container_width=True):
+            with st.spinner("🤖 AI is analyzing your patient..."):
+                
+                # Save audio to temp file
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
+                    tmp_file.write(audio_bytes.getvalue())
+                    tmp_file_path = tmp_file.name
+                
+                # Process through complete pipeline
+                with open(tmp_file_path, "rb") as audio_file:
+                    results = st.session_state.engine.process_voice_to_recommendations(audio_file)
+                
+                st.session_state.results = results
+                
+                # Clean up
+                os.unlink(tmp_file_path)
+                
+                st.success("✅ Analysis Complete!")
+
+# Display results
+if st.session_state.results:
+    results = st.session_state.results
+    
+    # Create tabs for organized display
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📝 Transcript",
+        "🔬 Trial Matching",
+        "🌍 Guideline Analysis", 
+        "💊 Recommendations"
+    ])
+    
+    with tab1:
+        st.markdown("### 📝 What I heard:")
+        st.info(results["transcript"])
+    
+    with tab2:
+        st.markdown("### 🔬 Clinical Trial Matching Analysis")
+        st.markdown("""
+        <div class="results-section">
+        """, unsafe_allow_html=True)
+        
+        # Display trial matching results
+        st.markdown(results["analysis"])
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    with tab3:
+        st.markdown("### 🌍 International Guideline Comparison")
+        
+        # Parse and display recommendations
+        recommendations = results["recommendations"]
+        
+        # Split into sections for better display
+        sections = recommendations.split("\n\n")
+        
+        for section in sections:
+            if "GUIDELINE COMPARISON" in section:
+                st.markdown("""
+                <div class="guideline-box">
+                """, unsafe_allow_html=True)
+                st.markdown(section)
+                st.markdown("</div>", unsafe_allow_html=True)
+    
+    with tab4:
+        st.markdown("### 💊 Final Clinical Recommendations")
+        
+        st.markdown("""
+        <div class="recommendation-primary">
+        """, unsafe_allow_html=True)
+        
+        st.markdown(results["recommendations"])
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+        # Download button for full report
+        st.download_button(
+            label="📥 Download Complete Analysis",
+            data=json.dumps(results, indent=2),
+            file_name=f"lipids_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+            mime="application/json"
+        )
+
+# Sidebar with additional info
+with st.sidebar:
+    st.markdown("### 📚 Trials Included")
+    trials_list = [
+        "4S (1994)",
+        "PROVE-IT (2004)",
+        "JUPITER (2008)",
+        "IMPROVE-IT (2015)",
+        "FOURIER (2017)",
+        "ODYSSEY (2018)",
+        "ORION-10 (2020)",
+        "CLEAR (2023)",
+        "REDUCE-IT (2019)"
+    ]
+    for trial in trials_list:
+        st.write(f"• {trial}")
+    
+    st.markdown("### 🌍 Guidelines Compared")
+    guidelines_list = [
+        "ACC/AHA 2018 (USA)",
+        "ESC/EAS 2019 (Europe)",
+        "NICE 2023 (UK)",
+        "CCS 2021 (Canada)",
+        "JAS 2022 (Japan)"
+    ]
+    for guideline in guidelines_list:
+        st.write(f"• {guideline}")
+    
+    st.markdown("### ⚡ Quick Actions")
+    if st.button("Clear Results"):
+        st.session_state.results = None
+        st.rerun()
+
+# Footer
+st.markdown("---")
+st.caption("""
+💡 **Pro Tips:** 
+- Speak clearly and include all relevant clinical information
+- Mention specific lab values and units
+- Include timing of events (e.g., "MI 3 months ago")
+- State current medications and doses
+- The AI will identify missing information needed for better matching
+""")
