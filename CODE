@@ -9,7 +9,8 @@ import os
 import base64
 
 # Initialize OpenAI
-OPENAI_API_KEY = "insert_Open_AI_KEY_here"
+# PLACEHOLDER: To use Anthropic Claude API instead of OpenAI, replace the client initialization and model calls below.
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "insert_Open_AI_KEY_here")
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # ============= COMPLETE TRIAL CRITERIA DATABASE =============
@@ -301,14 +302,28 @@ GUIDELINE COMPARISON:
 - CAC scoring for intermediate risk
 - Cost considerations less emphasized
 
+KEY RECOMMENDATIONS WITH CLASS OF RECOMMENDATION (COR) AND LEVEL OF EVIDENCE (LOE):
+- High-intensity statin for ASCVD: COR I, LOE A
+- Ezetimibe add-on if LDL not at goal on max statin: COR I, LOE B-R
+- PCSK9 inhibitor add-on if LDL not at goal on max statin + ezetimibe: COR IIa, LOE A
+- Bempedoic acid for statin-intolerant patients: COR IIb, LOE B-R
+
 2. ESC/EAS 2019 (Europe):
 - Very high risk: LDL <55 mg/dL and ≥50% reduction
-- High risk: LDL <70 mg/dL and ≥50% reduction  
+- High risk: LDL <70 mg/dL and ≥50% reduction
 - Moderate risk: LDL <100 mg/dL
 - Low risk: LDL <116 mg/dL
 - More aggressive targets than US
 - Uses SCORE2 risk calculator
 - Apolipoprotein B targets included
+
+KEY RECOMMENDATIONS WITH CLASS OF RECOMMENDATION (COR) AND LEVEL OF EVIDENCE (LOE):
+- High-intensity statin for ASCVD: COR I, LOE A
+- LDL-C target <55 mg/dL for very high risk: COR I, LOE A
+- LDL-C target <70 mg/dL for high risk: COR I, LOE A
+- Ezetimibe add-on if LDL not at goal on max statin: COR I, LOE B
+- PCSK9 inhibitor add-on if LDL not at goal on max statin + ezetimibe: COR I, LOE A
+- Icosapent ethyl for TG 135-499 mg/dL on statin with high CV risk: COR IIa, LOE B
 
 3. NICE 2023 (UK):
 - Focus on cost-effectiveness
@@ -359,6 +374,16 @@ class VoiceDrivenClinicalEngine:
             "recommendations": recommendations
         }
     
+    def process_text_to_recommendations(self, transcript: str) -> Dict:
+        """Complete pipeline from text input to recommendations (skips transcription)"""
+        analysis = self.analyze_patient_and_match_trials(transcript)
+        recommendations = self.generate_comprehensive_recommendations(analysis)
+        return {
+            "transcript": transcript,
+            "analysis": analysis,
+            "recommendations": recommendations
+        }
+
     def transcribe_audio(self, audio_file) -> str:
         """Transcribe audio using Whisper"""
         try:
@@ -431,54 +456,61 @@ class VoiceDrivenClinicalEngine:
         
         prompt = f"""
         Based on this patient analysis and trial matching results, provide comprehensive recommendations.
-        
+
         PATIENT ANALYSIS:
         {analysis}
-        
+
         INTERNATIONAL GUIDELINES:
         {self.guidelines}
-        
+
         Please provide:
-        
+
         1. GUIDELINE COMPARISON:
-        - What would ACC/AHA 2018 recommend for this patient?
-        - What would ESC/EAS 2019 recommend?
+        For EACH guideline recommendation, you MUST include the Class of Recommendation (COR) and Level of Evidence (LOE) where available.
+        Format each recommendation as: "Recommendation text (Class [I/IIa/IIb/III], LOE [A/B/B-R/C]) - [Guideline Source]"
+
+        - What would ACC/AHA 2018 recommend for this patient? Include COR and LOE for each recommendation.
+        - What would ESC/EAS 2019 recommend? Include COR and LOE for each recommendation.
         - What would NICE 2023 recommend?
         - Which guideline is BEST for this specific patient and WHY?
         - Would this patient benefit from following a different country's guideline? Explain.
-        
+
         2. RISK STRATIFICATION:
         - Calculate risk category (Very High/High/Moderate/Low)
         - Explain the reasoning
         - Note key risk factors
-        
+
         3. LDL TARGET:
         - Specific target based on best guideline
         - Current gap to goal
         - Expected timeline to achieve
-        
+
         4. TREATMENT RECOMMENDATIONS:
-        - PRIMARY: Specific drug and dose
-        - If already on therapy: What to add or change
-        - Alternative if intolerant
+        For each treatment recommendation, include the COR and LOE from the relevant guideline.
+        Format: "Drug/dose recommendation (Class [COR], LOE [LOE]) - [Guideline]"
+
+        - PRIMARY: Specific drug and dose with COR/LOE
+        - If already on therapy: What to add or change with COR/LOE
+        - Alternative if intolerant with COR/LOE
         - Non-pharmacologic interventions
-        
+
         5. TRIAL EVIDENCE:
         - Which trial evidence supports your recommendation?
         - Expected outcomes based on trial data
         - NNT (number needed to treat) if applicable
-        
+
         6. MONITORING PLAN:
         - When to recheck labs
         - What to monitor for safety
         - When to consider escalation
-        
+
         7. KEY CLINICAL PEARLS:
         - Important considerations for this specific patient
         - Potential drug interactions
         - Special populations considerations
-        
+
         BE SPECIFIC: Include exact drug names, doses, targets, and timelines.
+        ALWAYS INCLUDE COR AND LOE: Every guideline-based recommendation must show its Class of Recommendation and Level of Evidence.
         EXPLAIN YOUR REASONING: Why is your recommendation best for THIS patient?
         """
         
@@ -610,51 +642,95 @@ with col1:
     - Monitoring plan
     """)
     
-    # Example button
-    if st.button("🎤 Show Example Presentation"):
-        st.info("""
-        **Example presentation:**
-        
-        "This is a 65-year-old male who had an MI 3 months ago. 
-        He's currently on atorvastatin 40mg daily. His most recent 
-        labs show LDL of 155, HDL 38, triglycerides 280. He has 
-        type 2 diabetes with an HbA1c of 8.2%. His eGFR is 55. 
-        He's also on metformin, lisinopril, and metoprolol. 
-        Blood pressure is well controlled. He quit smoking after 
-        his MI. No known allergies or intolerances."
-        """)
+    # Example / preset scenarios
+    st.markdown("### 🧪 Preset Scenarios")
+    scenario_choice = st.selectbox("Load a test scenario:", [
+        "-- Select a scenario --",
+        "Scenario 1: 65M, post-MI, T2DM, high LDL/TG",
+        "Scenario 2: 58F, T2DM, HTN, no CVD, no statin",
+        "Scenario 3: 71M, post-CABG, statin-intolerant",
+        "Scenario 4: 55M, post-MI, near-goal LDL, high TG",
+    ])
+
+    PRESET_SCENARIOS = {
+        "Scenario 1: 65M, post-MI, T2DM, high LDL/TG": (
+            "This is a 65-year-old male who had an MI 3 months ago. "
+            "He's currently on atorvastatin 40mg daily. His most recent "
+            "labs show LDL of 155, HDL 38, triglycerides 280. He has "
+            "type 2 diabetes with an HbA1c of 8.2%. His eGFR is 55. "
+            "He's also on metformin, lisinopril, and metoprolol. "
+            "Blood pressure is well controlled. He quit smoking after "
+            "his MI. No known allergies or intolerances."
+        ),
+        "Scenario 2: 58F, T2DM, HTN, no CVD, no statin": (
+            "This is a 58-year-old female with type 2 diabetes, HbA1c 8.2%, "
+            "and hypertension. She has no history of cardiovascular disease. "
+            "Labs show LDL 145, HDL 42, triglycerides 190. Her eGFR is 78. "
+            "She is currently on metformin and lisinopril. She is not on any "
+            "statin or other lipid-lowering therapy. No known drug allergies "
+            "or intolerances."
+        ),
+        "Scenario 3: 71M, post-CABG, statin-intolerant": (
+            "This is a 71-year-old male who had CABG 5 years ago. He has "
+            "documented statin myopathy — intolerant to both atorvastatin and "
+            "rosuvastatin due to muscle symptoms. Labs show LDL 162, HDL 36, "
+            "triglycerides 155, HbA1c 5.9, eGFR 64. He is currently on "
+            "ezetimibe 10mg only. No other lipid-lowering agents."
+        ),
+        "Scenario 4: 55M, post-MI, near-goal LDL, high TG": (
+            "This is a 55-year-old male who had an MI 8 months ago. "
+            "Labs show LDL 68, HDL 34, triglycerides 245, HbA1c 6.1, "
+            "eGFR 82. He is currently on rosuvastatin 40mg, aspirin, and "
+            "metoprolol. Blood pressure is controlled. No statin intolerance."
+        ),
+    }
+
+    if scenario_choice != "-- Select a scenario --":
+        st.info(f"**{scenario_choice}:**\n\n\"{PRESET_SCENARIOS[scenario_choice]}\"")
 
 with col2:
     st.markdown("""
     <div class="recording-box">
         <h2>🎤 Record Patient Presentation</h2>
-        <p>Click below to start recording</p>
+        <p>Click below to start recording, or use a preset scenario from the left panel</p>
     </div>
     """, unsafe_allow_html=True)
-    
+
+    # Process preset scenario (text-based, no audio needed)
+    if scenario_choice != "-- Select a scenario --":
+        if st.button("🧪 Process Selected Scenario", type="primary", use_container_width=True):
+            with st.spinner("🤖 AI is analyzing the preset scenario..."):
+                results = st.session_state.engine.process_text_to_recommendations(
+                    PRESET_SCENARIOS[scenario_choice]
+                )
+                st.session_state.results = results
+                st.success("✅ Analysis Complete!")
+
+    st.markdown("---")
+
     # Audio input
     audio_bytes = st.audio_input("Click to start recording your patient presentation")
-    
+
     if audio_bytes:
         st.audio(audio_bytes, format="audio/wav")
-        
+
         if st.button("🚀 Process Patient Presentation", type="primary", use_container_width=True):
             with st.spinner("🤖 AI is analyzing your patient..."):
-                
+
                 # Save audio to temp file
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
                     tmp_file.write(audio_bytes.getvalue())
                     tmp_file_path = tmp_file.name
-                
+
                 # Process through complete pipeline
                 with open(tmp_file_path, "rb") as audio_file:
                     results = st.session_state.engine.process_voice_to_recommendations(audio_file)
-                
+
                 st.session_state.results = results
-                
+
                 # Clean up
                 os.unlink(tmp_file_path)
-                
+
                 st.success("✅ Analysis Complete!")
 
 # Display results
@@ -686,13 +762,25 @@ if st.session_state.results:
     
     with tab3:
         st.markdown("### 🌍 International Guideline Comparison")
-        
+        st.markdown("""
+        <div style="background: #fff3e0; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; border-left: 4px solid #ff9800;">
+            <strong>📌 COR/LOE Legend:</strong><br>
+            <strong>Class I</strong> = Strong recommendation (benefit >>> risk) &nbsp;|&nbsp;
+            <strong>Class IIa</strong> = Moderate (benefit >> risk) &nbsp;|&nbsp;
+            <strong>Class IIb</strong> = Weak (benefit ≥ risk) &nbsp;|&nbsp;
+            <strong>Class III</strong> = No benefit or harm<br>
+            <strong>LOE A</strong> = Multiple RCTs &nbsp;|&nbsp;
+            <strong>LOE B / B-R</strong> = Single RCT or non-randomized &nbsp;|&nbsp;
+            <strong>LOE C</strong> = Consensus / expert opinion
+        </div>
+        """, unsafe_allow_html=True)
+
         # Parse and display recommendations
         recommendations = results["recommendations"]
-        
+
         # Split into sections for better display
         sections = recommendations.split("\n\n")
-        
+
         for section in sections:
             if "GUIDELINE COMPARISON" in section:
                 st.markdown("""
